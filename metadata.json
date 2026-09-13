@@ -1,0 +1,6 @@
+{
+  "name": "Agenda Esportiva na TV",
+  "description": "Guia interativo da grade esportiva de 13/09/2026 organizada por modalidade e horário com notificações de início, busca e favoritos.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
