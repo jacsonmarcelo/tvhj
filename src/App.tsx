@@ -9,10 +9,15 @@ import { SportCategoryView } from './components/SportCategoryView';
 import { FavoritesView } from './components/FavoritesView';
 import { MatchDetailsModal } from './components/MatchDetailsModal';
 import { NotificationToast, ToastMessage } from './components/NotificationToast';
+import { AdminUploadModal } from './components/AdminUploadModal';
 import { playSportNotificationChime, sendSystemNotification } from './utils/notifications';
 
-const FAVORITES_STORAGE_KEY = 'agenda_esportiva_favorites_13092026';
-const NOTIFICATIONS_STORAGE_KEY = 'agenda_esportiva_notifications_13092026';
+const FAVORITES_STORAGE_KEY = 'agenda_esportiva_favorites_v2';
+const NOTIFICATIONS_STORAGE_KEY = 'agenda_esportiva_notifications_v2';
+const CUSTOM_SCHEDULE_KEY = 'agenda_esportiva_custom_schedule_v2';
+const CUSTOM_DATE_TITLE_KEY = 'agenda_esportiva_custom_date_v2';
+
+const DEFAULT_DATE_TITLE = 'Domingo, 13 de Setembro de 2026';
 
 export default function App() {
   const [currentView, setCurrentView] = useState<ViewMode>('grid');
@@ -21,11 +26,44 @@ export default function App() {
   const [onlyHighlights, setOnlyHighlights] = useState(false);
   const [selectedChannel, setSelectedChannel] = useState<string | 'all'>('all');
 
+  // Programação ativa e data da grade (com suporte a customização salva em localStorage)
+  const [activeSchedule, setActiveSchedule] = useState<MatchEvent[]>(() => {
+    try {
+      const saved = localStorage.getItem(CUSTOM_SCHEDULE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch {
+      // fallback
+    }
+    return SPORTS_SCHEDULE;
+  });
+
+  const [dateTitle, setDateTitle] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem(CUSTOM_DATE_TITLE_KEY);
+      if (saved) return saved;
+    } catch {
+      // fallback
+    }
+    return DEFAULT_DATE_TITLE;
+  });
+
+  const isUsingCustomSchedule = useMemo(() => {
+    return dateTitle !== DEFAULT_DATE_TITLE || activeSchedule !== SPORTS_SCHEDULE;
+  }, [dateTitle, activeSchedule]);
+
+  // Modal de Admin para upload das tabelas do X / Instagram
+  const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
+
   // Stored state: Favorites & Notification preferences
   const [favorites, setFavorites] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem(FAVORITES_STORAGE_KEY);
-      return saved ? JSON.parse(saved) : ['evt-56', 'evt-26', 'evt-19']; // Default favorites: Fla x Flu/Corinthians, Vôlei Brasil x Arg, F1
+      return saved ? JSON.parse(saved) : ['evt-56', 'evt-26', 'evt-19'];
     } catch {
       return ['evt-56', 'evt-26', 'evt-19'];
     }
@@ -80,9 +118,40 @@ export default function App() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
-  // Filtered matches logic
+  // Handler para quando novas partidas forem extraídas das fotos pelo Admin Modal
+  const handleScheduleUpdated = (newMatches: MatchEvent[], newDateTitle: string) => {
+    setActiveSchedule(newMatches);
+    setDateTitle(newDateTitle);
+    try {
+      localStorage.setItem(CUSTOM_SCHEDULE_KEY, JSON.stringify(newMatches));
+      localStorage.setItem(CUSTOM_DATE_TITLE_KEY, newDateTitle);
+    } catch (e) {
+      console.error('Falha ao salvar programação customizada no cache:', e);
+    }
+    playSportNotificationChime();
+    addToast(
+      '🎉 Programação Atualizada!',
+      `${newMatches.length} jogos carregados para ${newDateTitle}.`
+    );
+  };
+
+  // Restaura para a grade padrão original (13/09/2026)
+  const handleResetToDefault = () => {
+    setActiveSchedule(SPORTS_SCHEDULE);
+    setDateTitle(DEFAULT_DATE_TITLE);
+    try {
+      localStorage.removeItem(CUSTOM_SCHEDULE_KEY);
+      localStorage.removeItem(CUSTOM_DATE_TITLE_KEY);
+    } catch {
+      // ignore
+    }
+    setIsAdminModalOpen(false);
+    addToast('Grade Restaurada', 'A programação padrão de 13 de Setembro de 2026 foi restaurada.');
+  };
+
+  // Filtered matches logic baseado na grade ativa
   const filteredMatches = useMemo(() => {
-    return SPORTS_SCHEDULE.filter((match) => {
+    return activeSchedule.filter((match) => {
       // Search query filter (matches team names, title, league, channel, context)
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase().trim();
@@ -117,18 +186,18 @@ export default function App() {
 
       return true;
     });
-  }, [searchQuery, selectedCategory, onlyHighlights, selectedChannel]);
+  }, [activeSchedule, searchQuery, selectedCategory, onlyHighlights, selectedChannel]);
 
   // Favorite matches object list
   const favoriteMatches = useMemo(() => {
-    return SPORTS_SCHEDULE.filter((m) => favorites.includes(m.id));
-  }, [favorites]);
+    return activeSchedule.filter((m) => favorites.includes(m.id));
+  }, [activeSchedule, favorites]);
 
   // Handlers
   const handleToggleFavorite = (id: string) => {
     setFavorites((prev) => {
       const exists = prev.includes(id);
-      const match = SPORTS_SCHEDULE.find((m) => m.id === id);
+      const match = activeSchedule.find((m) => m.id === id);
       if (exists) {
         return prev.filter((item) => item !== id);
       } else {
@@ -160,7 +229,7 @@ export default function App() {
       delete next[matchId];
       return next;
     });
-    const match = SPORTS_SCHEDULE.find((m) => m.id === matchId);
+    const match = activeSchedule.find((m) => m.id === matchId);
     addToast('Alerta Desativado', `Notificação cancelada para ${match?.matchTitle || 'a partida'}.`);
   };
 
@@ -168,7 +237,7 @@ export default function App() {
     if (notifications[match.id] !== undefined) {
       handleRemoveNotification(match.id);
     } else {
-      handleSetNotification(match, 15); // Default: 15 min antes
+      handleSetNotification(match, 15);
     }
   };
 
@@ -196,16 +265,18 @@ export default function App() {
 
   const handleTriggerTestNotification = () => {
     playSportNotificationChime();
-    const sample = SPORTS_SCHEDULE.find((m) => m.id === 'evt-56') || SPORTS_SCHEDULE[0];
-    sendSystemNotification(
-      `⚽ Jogo Começando: ${sample.matchTitle}`,
-      `Transmissão ao vivo agora em ${sample.channels.join(', ')}!`
-    );
-    addToast(
-      '⚽ Teste de Notificação',
-      `Aviso sonoro ativado para ${sample.matchTitle} (${sample.time})!`,
-      sample
-    );
+    const sample = activeSchedule.find((m) => m.id === 'evt-56') || activeSchedule[0];
+    if (sample) {
+      sendSystemNotification(
+        `⚽ Jogo Começando: ${sample.matchTitle}`,
+        `Transmissão ao vivo agora em ${sample.channels.join(', ')}!`
+      );
+      addToast(
+        '⚽ Teste de Notificação',
+        `Aviso sonoro ativado para ${sample.matchTitle} (${sample.time})!`,
+        sample
+      );
+    }
   };
 
   // Fluid navigation inside modal
@@ -234,6 +305,8 @@ export default function App() {
         favoritesCount={favorites.length}
         activeRemindersCount={Object.keys(notifications).length}
         onTriggerTestNotification={handleTriggerTestNotification}
+        onOpenAdminModal={() => setIsAdminModalOpen(true)}
+        currentDateTitle={dateTitle}
       />
 
       {/* Global Search & Filter Bar */}
@@ -247,7 +320,7 @@ export default function App() {
         selectedChannel={selectedChannel}
         onChannelChange={setSelectedChannel}
         totalFilteredCount={filteredMatches.length}
-        totalCount={SPORTS_SCHEDULE.length}
+        totalCount={activeSchedule.length}
       />
 
       {/* Main Content Area */}
@@ -302,8 +375,8 @@ export default function App() {
       {/* Footer info bar */}
       <footer className="mt-auto border-t border-neutral-850 bg-neutral-950 py-6 text-center text-xs text-neutral-500">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span>Agenda Esportiva na TV • Grade de Domingo, 13 de Setembro de 2026</span>
-          <span>Fonte: @ESPORTESNATV • 64 confrontos e transmissões catalogadas</span>
+          <span>Agenda Esportiva na TV • {dateTitle}</span>
+          <span>{activeSchedule.length} confrontos e transmissões catalogadas</span>
         </div>
       </footer>
 
@@ -323,6 +396,17 @@ export default function App() {
           hasPrev={currentMatchIndex > 0}
         />
       )}
+
+      {/* Admin Upload Modal for Daily Updates */}
+      <AdminUploadModal
+        isOpen={isAdminModalOpen}
+        onClose={() => setIsAdminModalOpen(false)}
+        currentScheduleCount={activeSchedule.length}
+        currentScheduleDate={dateTitle}
+        onScheduleUpdated={handleScheduleUpdated}
+        onResetToDefault={handleResetToDefault}
+        isUsingCustomSchedule={isUsingCustomSchedule}
+      />
 
       {/* Floating Notification Toasts */}
       <NotificationToast

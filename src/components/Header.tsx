@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Bell, BellRing, Calendar, Star, LayoutGrid, Clock, Trophy, Volume2 } from 'lucide-react';
+import { Bell, BellRing, Calendar, Star, LayoutGrid, Clock, Trophy, Volume2, UploadCloud } from 'lucide-react';
 import { ViewMode } from '../types';
 import { playSportNotificationChime, requestBrowserNotificationPermission } from '../utils/notifications';
 
@@ -9,6 +9,8 @@ interface HeaderProps {
   favoritesCount: number;
   activeRemindersCount: number;
   onTriggerTestNotification: () => void;
+  onOpenAdminModal: () => void;
+  currentDateTitle: string;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -17,6 +19,8 @@ export const Header: React.FC<HeaderProps> = ({
   favoritesCount,
   activeRemindersCount,
   onTriggerTestNotification,
+  onOpenAdminModal,
+  currentDateTitle,
 }) => {
   const [browserNotificationAllowed, setBrowserNotificationAllowed] = useState(
     typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted'
@@ -49,15 +53,25 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
               <div className="flex items-center gap-2 text-xs sm:text-sm text-neutral-400">
                 <Calendar className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="font-semibold text-neutral-200">Domingo, 13 de Setembro de 2026</span>
+                <span className="font-semibold text-neutral-200">{currentDateTitle}</span>
                 <span className="hidden sm:inline text-neutral-600">•</span>
                 <span className="hidden sm:inline text-neutral-400">Grade completa de transmissões esportivas</span>
               </div>
             </div>
           </div>
 
-          {/* Right Action buttons: Notifications & Sound */}
-          <div className="flex items-center gap-2 self-end md:self-auto">
+          {/* Right Action buttons: Admin Upload, Notifications & Sound */}
+          <div className="flex items-center gap-2 self-end md:self-auto flex-wrap">
+            <button
+              onClick={onOpenAdminModal}
+              id="header-admin-upload-btn"
+              title="Fazer upload de novas fotos de tabelas para atualizar a programação"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold bg-neutral-800 hover:bg-neutral-750 text-emerald-300 border border-emerald-500/40 hover:border-emerald-400 shadow-sm transition-all group"
+            >
+              <UploadCloud className="w-4 h-4 text-emerald-400 group-hover:scale-110 transition-transform" />
+              <span>Atualizar Grade (Fotos)</span>
+            </button>
+
             <button
               onClick={handleEnableNotifications}
               id="header-notification-btn"
